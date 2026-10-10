@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+      - name: build
+        run: go build -o srvs-test ./cmd/srvs
+      - name: smoke test (live network)
+        if: runner.os != 'Windows'
+        run: |
+          ./srvs-test version
+          code=0; ./srvs-test ssl github.com --warn-days 3 || code=$?; echo "ssl exit $code"; test "$code" -le 1
+          ./srvs-test dns github.com MX
+          code=0; ./srvs-test mail github.com --json > /dev/null || code=$?; echo "mail exit $code"; test "$code" -le 2
