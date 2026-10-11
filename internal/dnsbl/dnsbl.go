@@ -43,7 +43,7 @@ var IPLists = []List{
 	{"Blocklist.de", "bl.blocklist.de", "https://www.blocklist.de/en/delist.html", 2, nil, false, ""},
 	{"SpamEatingMonkey", "bl.spameatingmonkey.net", "https://spameatingmonkey.com/lookup", 2, nil, false, ""},
 	{"0spam", "bl.0spam.org", "https://0spam.org/", 1, nil, false, ""},
-	{"SPFBL", "dnsbl.spfbl.net", "https://spfbl.net/en/delist/", 1, nil, true, ""},
+	{"SPFBL", "dnsbl.spfbl.net", "https://spfbl.net/en/delist/", 1, regexp.MustCompile(`^127\.0\.0\.2$`), true, ""},
 	{"Scientific Spam", "bl.scientificspam.net", "https://www.scientificspam.net/", 1, nil, false, ""},
 	{"Swinog", "dnsrbl.swinog.ch", "https://antispam.imp.ch/", 1, nil, false, ""},
 	{"Suomispam", "bl.suomispam.net", "https://suomispam.net/", 1, nil, false, ""},
@@ -57,6 +57,17 @@ var IPLists = []List{
 	{"SpamSources (fabel)", "spamsources.fabel.dk", "https://www.fabel.dk/", 1, nil, false, ""},
 	{"Backscatterer", "ips.backscatterer.org", "https://www.backscatterer.org/", 1, nil, false, ""},
 	{"SEM Backscatter", "backscatter.spameatingmonkey.net", "https://spameatingmonkey.com/lookup", 1, nil, false, ""},
+}
+
+// Notes explains answers that are not listings, per list zone and answer code. Such an answer is reported as
+// information (never a warning or failure). SPFBL only lists for spam complaints with 127.0.0.2; its other codes
+// describe the mail setup or the network range.
+var Notes = map[string]map[string]string{
+	"dnsbl.spfbl.net": {
+		"127.0.0.3": "SPFBL (a Brazilian list) says the mail server on this IP does not identify itself properly, usually because reverse DNS (PTR) is missing or does not match. This is not a spam listing, and SPFBL is used mainly by Brazilian mail servers, so it rarely affects delivery. Fixing reverse DNS clears it.",
+		"127.0.0.4": "SPFBL (a Brazilian list) found no mail server on this IP, or sees it as a home or NAT connection. This is not a spam listing and only matters if this IP sends mail directly. SPFBL is used mainly by Brazilian mail servers, so it rarely affects delivery.",
+		"127.0.0.5": "SPFBL (a Brazilian list) marks the abuse contact of the whole network range this IP belongs to as inactive. That is about the hosting provider, not mail sent from this IP, and it is not a spam listing. SPFBL is used mainly by Brazilian mail servers, so it rarely affects delivery.",
+	},
 }
 
 // DomainLists are domain (URI) blacklists.
@@ -73,6 +84,7 @@ type Result struct {
 	Unknown string // why it could not be checked
 	Answer  string
 	Reason  string // TXT explanation, if the list gives one
+	Note    string // the list answered with a code that is not a listing (see Notes)
 }
 
 // Spamhaus and some others answer 127.255.255.x or (URIBL) 127.0.0.1 when they refuse the query.
@@ -196,7 +208,11 @@ func lookup(r *resolver.Resolver, label string, lists []List, key string) []Resu
 					}
 					if l.Match == nil || l.Match.MatchString(ans) {
 						res.Listed = true
+						res.Note = ""
 						break
+					}
+					if n := Notes[l.Zone][ans]; n != "" {
+						res.Note = n
 					}
 				}
 			}
@@ -272,7 +288,9 @@ func addResults(rep *report.Report, section, target string, res []Result, verbos
 			}
 		default:
 			clean++
-			if verbose {
+			if x.Note != "" {
+				rep.Add(section, target+" · "+x.List.Name, report.Info, "note, not a listing ("+x.Answer+")", x.Note, x.List.Info)
+			} else if verbose {
 				rep.Add(section, target+" · "+x.List.Name, report.OK, "not listed")
 			}
 		}
