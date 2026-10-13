@@ -16,12 +16,14 @@ import (
 // Resolver sends queries to one or more recursive servers in order.
 type Resolver struct {
 	Servers []string // host:port
+	Source  string   // "flag" (--resolver), "system" or "fallback" (no system resolver found)
 	Timeout time.Duration
 	client  *dns.Client
 	tcp     *dns.Client
 }
 
-// Fallback servers when no system resolver is configured (Windows, containers without resolv.conf).
+// Fallback servers when no system resolver is found (a container without /etc/resolv.conf, a Windows machine whose
+// adapters list no DNS server). The output says so; --resolver overrides it.
 var Fallback = []string{"1.1.1.1:53", "8.8.8.8:53"}
 
 // publicResolvers answer for everyone; some blacklists (Spamhaus) refuse queries that come through them.
@@ -38,13 +40,11 @@ func New(server string, timeout time.Duration) *Resolver {
 		if _, _, err := net.SplitHostPort(server); err != nil {
 			server = net.JoinHostPort(strings.Trim(server, "[]"), "53")
 		}
-		r.Servers = []string{server}
-	} else if cfg, err := dns.ClientConfigFromFile("/etc/resolv.conf"); err == nil && len(cfg.Servers) > 0 {
-		for _, s := range cfg.Servers {
-			r.Servers = append(r.Servers, net.JoinHostPort(s, cfg.Port))
-		}
+		r.Servers, r.Source = []string{server}, "flag"
+	} else if s := systemServers(); len(s) > 0 {
+		r.Servers, r.Source = s, "system"
 	} else {
-		r.Servers = append(r.Servers, Fallback...)
+		r.Servers, r.Source = append([]string(nil), Fallback...), "fallback"
 	}
 	r.client = &dns.Client{Net: "udp", Timeout: timeout, UDPSize: 1232}
 	r.tcp = &dns.Client{Net: "tcp", Timeout: timeout}
@@ -62,6 +62,49 @@ func (r *Resolver) UsesPublicResolver() bool {
 
 // Describe returns the server list for notes.
 func (r *Resolver) Describe() string { return strings.Join(r.Servers, ", ") }
+
+// Label names a server for the "Resolver:" note and says when it is the public fallback.
+func (r *Resolver) Label(server string) string {
+	if r.Source == "fallback" {
+		return server + " (no system resolver found, so a public fallback; set one with --resolver)"
+	}
+	return server
+}
+
+// serversFromResolvConf reads the nameserver lines of a resolv.conf file (Linux, macOS, BSD).
+func serversFromResolvConf(path string) []string {
+	cfg, err := dns.ClientConfigFromFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, s := range cfg.Servers {
+		out = append(out, net.JoinHostPort(s, cfg.Port))
+	}
+	return out
+}
+
+// usableDNS turns adapter DNS addresses into host:port, in order and without duplicates. It drops unspecified
+// addresses, the fec0:0:0:ffff::1-3 placeholders Windows lists on adapters with no IPv6 DNS server, and
+// link-local IPv6 addresses (they need an interface zone).
+func usableDNS(ips []net.IP) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, ip := range ips {
+		if ip == nil || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		if ip.To4() == nil && len(ip) == net.IPv6len && ip[0] == 0xfe && ip[1]&0xc0 == 0xc0 { // fec0::/10, deprecated site-local
+			continue
+		}
+		hp := net.JoinHostPort(ip.String(), "53")
+		if !seen[hp] {
+			seen[hp] = true
+			out = append(out, hp)
+		}
+	}
+	return out
+}
 
 // Answer is the result of one query.
 type Answer struct {

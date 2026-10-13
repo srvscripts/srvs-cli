@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -78,5 +79,24 @@ func TestUsageAndErrors(t *testing.T) {
 	}
 	if code := run([]string{"nope", "x"}, &out, &errb); code != 2 {
 		t.Errorf("unknown command should exit 2, got %d", code)
+	}
+}
+
+// The process exit status and the JSON "exit" field come from the same value (audit CLI-01/02). An unresolvable
+// .invalid target is "unknown" without needing the network.
+func TestRunExitMatchesJSON(t *testing.T) {
+	for _, args := range [][]string{
+		{"ssl", "does-not-exist.invalid:443", "--json", "--timeout", "2s"},
+		{"ssl", "does-not-exist.invalid:443", "--json", "--timeout", "2s", "--ignore-warnings"},
+	} {
+		var out, errb bytes.Buffer
+		code := run(args, &out, &errb)
+		var doc struct{ Exit int }
+		if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+			t.Fatalf("%v: bad JSON: %v\n%s", args, err, out.String())
+		}
+		if code != doc.Exit || code != 2 {
+			t.Errorf("%v: process exit %d, JSON exit %d, want both 2", args, code, doc.Exit)
+		}
 	}
 }

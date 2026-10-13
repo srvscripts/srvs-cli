@@ -91,6 +91,35 @@ func ExitCode(reports ...*Report) int {
 	return 0
 }
 
+// ExitCodeIgnoringWarnings is the exit code for --ignore-warnings: a failure is 1, anything that could not be
+// checked is 2 (even when warnings are also present, so exit-only monitoring never mistakes it for success),
+// otherwise 0. Warnings alone give 0.
+func ExitCodeIgnoringWarnings(reports ...*Report) int {
+	unknown := false
+	for _, r := range reports {
+		for _, c := range r.Checks {
+			switch c.Status {
+			case Fail:
+				return 1
+			case Unknown:
+				unknown = true
+			}
+		}
+	}
+	if unknown {
+		return 2
+	}
+	return 0
+}
+
+// Exit is the one exit code for a run: the process exit and the "exit" field of the JSON output both use it.
+func Exit(ignoreWarnings bool, reports ...*Report) int {
+	if ignoreWarnings {
+		return ExitCodeIgnoringWarnings(reports...)
+	}
+	return ExitCode(reports...)
+}
+
 // Style controls the text output.
 type Style struct {
 	Color   bool // ANSI colours
@@ -181,8 +210,9 @@ func (r *Report) Text(w io.Writer, s Style) {
 	}
 }
 
-// JSON writes one or more reports as a JSON document.
-func JSON(w io.Writer, reports []*Report) error {
+// JSON writes one or more reports as a JSON document. exit is the run's exit code (from Exit), so the "exit"
+// field always equals the process exit status.
+func JSON(w io.Writer, exit int, reports []*Report) error {
 	type out struct {
 		Tool    string    `json:"tool"`
 		Version string    `json:"version"`
@@ -191,7 +221,7 @@ func JSON(w io.Writer, reports []*Report) error {
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(out{Tool: "srvs", Version: Version, Exit: ExitCode(reports...), Reports: reports})
+	return enc.Encode(out{Tool: "srvs", Version: Version, Exit: exit, Reports: reports})
 }
 
 // Version is set at build time (-ldflags "-X github.com/srvscripts/srvs-cli/internal/report.Version=v1.0.0").

@@ -21,6 +21,9 @@ jobs:
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
+      - name: govulncheck (reachable vulnerabilities in our code, dependencies and the Go standard library)
+        if: runner.os == 'Linux'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: go test
         shell: bash
         run: |

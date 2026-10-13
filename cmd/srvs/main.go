@@ -36,7 +36,8 @@ Usage:
 Options (before or after the target):
   --json               machine-readable output
   -q, --quiet          only show warnings, failures and checks that could not run
-  --resolver IP        DNS server to use (default: the system resolver)
+  --resolver IP        DNS server to use (default: the system resolver: /etc/resolv.conf on Linux and macOS,
+                       the network adapters' DNS servers on Windows; 1.1.1.1 and 8.8.8.8 only if none is found)
   --timeout 8s         time limit per network step
   --warn-days 14       ssl: warn when the certificate expires within N days
   --starttls auto      ssl: auto, smtp, imap, pop3 or none
@@ -44,7 +45,7 @@ Options (before or after the target):
   --selector NAME      mail: DKIM selector to check (repeatable; default: common selectors)
   --spamhaus-key KEY   bl: Spamhaus Data Query Service key (or env SRVS_SPAMHAUS_KEY)
   -v, --verbose        bl: list every clean blacklist; mail: show the SPF include tree
-  --ignore-warnings    exit 0 when there are warnings but no failures
+  --ignore-warnings    warnings do not count: exit 1 on a failure, 2 if something could not be checked, else 0
   --no-color           plain output (also NO_COLOR=1)
 
 Exit codes: 0 all checks passed · 1 a warning or failure · 2 something could not be checked (and nothing failed)
@@ -175,12 +176,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			rep.Note("Some blacklists (Spamhaus, URIBL) refuse queries from public resolvers like " + r.Describe() + ". Use your own resolver (--resolver) or a free Spamhaus DQS key (--spamhaus-key).")
 		}
 	}
-	code := report.ExitCode(reports...)
-	if o.ignoreWarn && code == 1 && !hasFail(reports) {
-		code = 0
-	}
+	code := report.Exit(o.ignoreWarn, reports...)
 	if o.json {
-		if err := report.JSON(stdout, reports); err != nil {
+		if err := report.JSON(stdout, code, reports); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 2
 		}
@@ -201,15 +199,6 @@ type txtLookup struct{ r *resolver.Resolver }
 func (t txtLookup) TXT(name string) ([]string, error) {
 	v, _, err := t.r.TXT(name)
 	return v, err
-}
-
-func hasFail(reports []*report.Report) bool {
-	for _, r := range reports {
-		if r.Counts()[report.Fail] > 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func needsResolverNote(rep *report.Report) bool {
@@ -286,7 +275,7 @@ func cmdDNS(r *resolver.Resolver, name string, types []string) *report.Report {
 		switch a.RcodeName() {
 		case "NXDOMAIN":
 			rep.Add("", t, report.Fail, "NXDOMAIN: the name does not exist")
-			rep.Note("Resolver: " + a.Server)
+			rep.Note("Resolver: " + r.Label(a.Server))
 			return rep
 		case "SERVFAIL":
 			rep.Add("", t, report.Fail, "SERVFAIL", "The resolver could not get an answer: broken name servers or a DNSSEC validation failure.")
@@ -310,7 +299,7 @@ func cmdDNS(r *resolver.Resolver, name string, types []string) *report.Report {
 		rep.Note("DNSSEC: answers validated by the resolver (AD flag).")
 	}
 	if len(r.Servers) > 0 {
-		rep.Note("Resolver: " + r.Servers[0])
+		rep.Note("Resolver: " + r.Label(r.Servers[0]))
 	}
 	return rep
 }

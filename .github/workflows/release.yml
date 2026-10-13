@@ -13,6 +13,7 @@ jobs:
         with:
           go-version: stable   # current Go: older linkers omit LC_UUID, which macOS 15+ refuses to load
       - run: go vet ./... && go test -count=1 ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: build archives
         run: |
           set -eu

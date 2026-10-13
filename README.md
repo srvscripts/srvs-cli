@@ -72,14 +72,14 @@ Every command accepts several targets: `srvs ssl mail.example.com:993 mail.examp
 |---|---|
 | `--json` | Machine-readable output |
 | `-q`, `--quiet` | Only show warnings, failures and checks that could not run |
-| `--resolver IP` | DNS server to use (default: your system resolver) |
+| `--resolver IP` | DNS server to use (default: your system resolver, see below) |
 | `--timeout 8s` | Time limit per network step |
 | `--warn-days 14` | `ssl`: warn when the certificate expires within N days |
 | `--starttls auto` | `ssl`: `auto`, `smtp`, `imap`, `pop3` or `none` |
 | `--selector NAME` | `mail`: DKIM selector to check (repeatable) |
 | `--spamhaus-key KEY` | `bl`: free [Spamhaus DQS](https://www.spamhaus.com/free-trial/free-data-query-service/) key (or `SRVS_SPAMHAUS_KEY`) |
 | `-v`, `--verbose` | `bl`: list every clean blacklist; `mail`: show the SPF include tree |
-| `--ignore-warnings` | Exit 0 when there are warnings but no failures |
+| `--ignore-warnings` | Warnings do not count: exit 1 on a failure, 2 if something could not be checked, otherwise 0 |
 | `--no-color` | Plain output (also `NO_COLOR=1`) |
 
 ## Exit codes
@@ -91,6 +91,10 @@ Every command accepts several targets: `srvs ssl mail.example.com:993 mail.examp
 | 2 | Something could not be checked, and nothing failed (timeout, blocked port, refused query, bad arguments) |
 
 A failure always wins over "could not check", so a monitor never misses a real problem.
+
+With `--ignore-warnings`, warnings are left out of the exit code but nothing else is: a failure is still 1 and a check
+that could not run is still 2, even when warnings are also present. With `--json`, the `exit` field is always the same
+number as the process exit status.
 
 ## Use it in cron or monitoring
 
@@ -104,6 +108,11 @@ With `--json` the output is one document with `exit`, and per target a list of c
 `status` (`ok`, `info`, `warn`, `fail`, `unknown`), `value`, `detail` and `fix`.
 
 ## Good to know
+
+- **Which DNS server is used.** By default `srvs` asks the resolver your system uses: the `nameserver` lines of
+  `/etc/resolv.conf` on Linux and macOS, and the DNS servers of the active network adapters on Windows (the ones
+  `ipconfig /all` shows). Only if none is found does it fall back to 1.1.1.1 and 8.8.8.8, and the output then says so
+  next to "Resolver:". Use `--resolver` to pick one yourself, for example an internal server for split DNS.
 
 - **Blacklists and public resolvers.** Spamhaus and URIBL refuse queries that arrive through public resolvers such as
   1.1.1.1 or 8.8.8.8. Some resolvers even answer "not listed" for every address. `srvs` checks each list's own test entry
