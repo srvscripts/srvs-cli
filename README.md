@@ -51,7 +51,7 @@ irm https://raw.githubusercontent.com/srvscripts/srvs-cli/main/scripts/install.p
 **By hand:** download the archive for your system from [Releases](https://github.com/srvscripts/srvs-cli/releases),
 check it against `SHA256SUMS`, and put `srvs` (or `srvs.exe`) in your PATH.
 
-**With Go 1.22 or later:** `go install github.com/srvscripts/srvs-cli/cmd/srvs@latest`
+**With Go:** `go install github.com/srvscripts/srvs-cli/cmd/srvs@latest`. Building needs Go 1.26 or later. With Go 1.21–1.25 the `go` command downloads the required toolchain automatically (the default `GOTOOLCHAIN=auto`); if your environment sets `GOTOOLCHAIN=local`, install Go 1.26+ first.
 
 ## Commands
 
