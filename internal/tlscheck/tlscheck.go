@@ -176,7 +176,8 @@ func Check(rep *report.Report, section string, o Options) {
 		st := report.Fail
 		det := ""
 		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() || strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no such host") {
+		// "connection refused" (Linux, macOS) or "actively refused it" (Windows): the port is closed, so not checked.
+		if errors.As(err, &ne) && ne.Timeout() || strings.Contains(err.Error(), "refused") || strings.Contains(err.Error(), "no such host") {
 			st = report.Unknown
 			if o.Port == 25 {
 				det = "Many home and cloud networks block outgoing port 25. Try from a server, or check port 587/465."

@@ -27,7 +27,7 @@ jobs:
           set +e
           go test -count=1 -json ./... > test.json; rc=$?
           # Failing tests' messages as one public annotation (job logs need a login, annotations do not).
-          msg=$(jq -r 'select(.Action=="output" and .Test!=null) | .Output' test.json | grep -E '_test\.go:[0-9]+|--- FAIL|panic:' | head -40 | sed 's/%/%25/g' | tr -d '\r' | awk '{printf "%s%%0A", $0}')
+          msg=$(jq -r 'select(.Action=="output") | .Output' test.json | grep -E '_test\.go:[0-9]+|--- FAIL|panic:|^FAIL|build failed|setup failed|\.go:[0-9]+:[0-9]+:' | head -40 | sed 's/%/%25/g' | tr -d '\r' | awk '{printf "%s%%0A", $0}')
           [ -n "$msg" ] && echo "::error title=go test failures (${{ runner.os }})::$msg"
           jq -r 'select(.Action=="output") | .Output' test.json | tr -d '\r' | grep -vE '^=== (RUN|PAUSE|CONT)' | tail -60
           exit $rc
